@@ -30,9 +30,11 @@ df_template <- data.frame(matrix(ncol = 5, nrow = 0))
 colnames(df_template) <- c("Compound", "logKow", "logKoa", "logKaw", "Group")
 
 # Helper Functions --------------------------------------------------------
-# Format labels with one decimal point
-format_decimal <- function(x) {
-  sprintf("%.1f", x)
+# Count decimal places from the raw text of an input (e.g. "3" -> 0, "1.0" -> 1, "2.25" -> 2)
+count_decimals <- function(txt) {
+  if (is.null(txt)) return(0L)
+  txt <- as.character(txt)
+  if (grepl(".", txt, fixed = TRUE)) nchar(sub("^[^.]*\\.", "", txt)) else 0L
 }
 
 # UI Components -----------------------------------------------------------
@@ -98,6 +100,21 @@ howto_panel <- tabPanel(
 multi_plot_panel <- tabPanel(
   "Generate Multiphase Plot",
   useShinyjs(),
+  tags$script(HTML("
+    $(document).on('shiny:connected', function() {
+      function sendRaw(id) {
+        var val = $('#' + id).val();
+        if (val !== null && val !== undefined) {
+          Shiny.setInputValue(id + '_text', val);
+        }
+      }
+      // Send initial values once inputs exist
+      setTimeout(function() { sendRaw('tickInterval'); sendRaw('tickInterval_atm'); }, 500);
+      // Update on any change
+      $(document).on('change input', '#tickInterval', function() { sendRaw('tickInterval'); });
+      $(document).on('change input', '#tickInterval_atm', function() { sendRaw('tickInterval_atm'); });
+    });
+  ")),
   fluidRow(
     column(
       3,
@@ -196,7 +213,7 @@ multi_plot_panel <- tabPanel(
       checkboxInput("linelab1_switch", label = "Label threshold line 1", value = TRUE),
       checkboxInput("linelab2_switch", label = "Label threshold line 2", value = TRUE),
       checkboxInput("linelab3_switch", label = "Label threshold line 3", value = FALSE),
-      sliderInput("numTicks", label = "Number of Axis Ticks", min = 0, max = 20, value = 7)
+      numericInput("tickInterval", label = "Axis Tick Interval", value = 3, min = 0.1, step = 0.5)
     )
   ),
   hr(),
@@ -379,7 +396,7 @@ atm_plot_panel <- tabPanel(
       checkboxInput("linelab1_switch_atm", label = "Label threshold line 1", value = TRUE),
       checkboxInput("linelab2_switch_atm", label = "Label threshold line 2", value = TRUE),
       checkboxInput("linelab3_switch_atm", label = "Label threshold line 3", value = FALSE),
-      sliderInput("numTicks_atm", label = "Number of Axis Ticks", min = 0, max = 20, value = 7)
+      numericInput("tickInterval_atm", label = "Axis Tick Interval", value = 3, min = 0.1, step = 0.5)
     )
   ),
   hr(),
@@ -972,9 +989,15 @@ server <- function(input, output, session) {
           scale_color_manual(values = df_prop()$Group, breaks = df_prop()$Group)
         }
       } +
-      coord_cartesian(xlim = c(input$x_min, input$x_max), ylim = c(input$y_min, input$y_max)) +
-      scale_x_continuous(expand = c(0, 0), name = bquote(logK[OW]), breaks = seq(input$x_min, input$x_max, length.out = input$numTicks), labels = format_decimal) +
-      scale_y_continuous(expand = c(0, 0), name = bquote(logK[AW]), breaks = seq(input$y_min, input$y_max, length.out = input$numTicks), labels = format_decimal) +
+      coord_cartesian(xlim = c(input$x_min, input$x_max), ylim = c(input$y_min, input$y_max)) + {
+        tick_fmt <- paste0("%.", count_decimals(input$tickInterval_text), "f")
+        x_brk <- seq(input$x_min, input$x_max, by = input$tickInterval)
+        y_brk <- seq(input$y_min, input$y_max, by = input$tickInterval)
+        list(
+          scale_x_continuous(expand = c(0, 0), name = bquote(logK[OW]), breaks = x_brk, labels = sprintf(tick_fmt, x_brk)),
+          scale_y_continuous(expand = c(0, 0), name = bquote(logK[AW]), breaks = y_brk, labels = sprintf(tick_fmt, y_brk))
+        )
+      } +
       theme_bw() +
       theme(legend.position = "none", plot.margin = margin(r = 15, t = 15, l = 10, b = 10, unit = "pt"))
   })
@@ -1439,9 +1462,15 @@ server <- function(input, output, session) {
           scale_color_manual(values = df_prop()$Group, breaks = df_prop()$Group)
         }
       } +
-      coord_cartesian(xlim = c(input$x_min_atm, input$x_max_atm), ylim = c(input$y_min_atm, input$y_max_atm)) +
-      scale_x_continuous(expand = c(0, 0), name = bquote(logK[OA]), breaks = seq(input$x_min_atm, input$x_max_atm, length.out = input$numTicks_atm), labels = format_decimal) +
-      scale_y_continuous(expand = c(0, 0), name = bquote(logK[AW]), breaks = seq(input$y_min_atm, input$y_max_atm, length.out = input$numTicks_atm), labels = format_decimal) +
+      coord_cartesian(xlim = c(input$x_min_atm, input$x_max_atm), ylim = c(input$y_min_atm, input$y_max_atm)) + {
+        tick_fmt_atm <- paste0("%.", count_decimals(input$tickInterval_atm_text), "f")
+        x_brk_atm <- seq(input$x_min_atm, input$x_max_atm, by = input$tickInterval_atm)
+        y_brk_atm <- seq(input$y_min_atm, input$y_max_atm, by = input$tickInterval_atm)
+        list(
+          scale_x_continuous(expand = c(0, 0), name = bquote(logK[OA]), breaks = x_brk_atm, labels = sprintf(tick_fmt_atm, x_brk_atm)),
+          scale_y_continuous(expand = c(0, 0), name = bquote(logK[AW]), breaks = y_brk_atm, labels = sprintf(tick_fmt_atm, y_brk_atm))
+        )
+      } +
       theme_bw() +
       theme(legend.position = "none", plot.margin = margin(r = 15, t = 15, l = 10, b = 10, unit = "pt"))
   })
